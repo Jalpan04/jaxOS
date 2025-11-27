@@ -25,6 +25,7 @@ class IntentParser:
             "delete_file",
             "list_files",
             "system_status",
+            "browse",
             "unknown"
         }
 
@@ -60,6 +61,8 @@ class IntentParser:
                 intent["params"]["path"] = intent["params"]["filename"]
             if "file_content" in intent["params"] and "content" not in intent["params"]:
                 intent["params"]["content"] = intent["params"]["file_content"]
+            if "website" in intent["params"] and "url" not in intent["params"]:
+                intent["params"]["url"] = intent["params"]["website"]
 
             if intent["action"] not in self.valid_actions:
                 return {"action": "unknown", "reason": f"Invalid action: {intent['action']}"}

@@ -32,14 +32,19 @@ try:
     from intent_parser import IntentParser
     # Import UI modules
     sys.path.append('ui')
+    sys.path.append('net')
     from tk_renderer import TkRenderer
     from segment_font import SegmentFont
+    import browser
 except ImportError:
     # Handle running from root directory
     sys.path.append('kernel')
     sys.path.append('ui')
+    sys.path.append('net')
+    from intent_parser import IntentParser
     from tk_renderer import TkRenderer
     from segment_font import SegmentFont
+    import browser
 
 # Configuration
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
@@ -49,7 +54,7 @@ You are the kernel of jaxOS, an AI-native operating system.
 Your goal is to interpret user intent and translate it into system calls.
 Output ONLY valid JSON matching this schema:
 {
-  "action": "create_file" | "read_file" | "delete_file" | "list_files" | "system_status",
+  "action": "create_file" | "read_file" | "delete_file" | "list_files" | "system_status" | "browse",
   "params": { ...arguments... }
 }
 Example:
@@ -78,37 +83,39 @@ class NeuralKernel:
     def log(self, message: str):
         """Logs to console and adds to UI buffer"""
         print(message)
-        self.log_lines.append(message)
-        if len(self.log_lines) > 10:
+        # Split message by newlines to prevent UI overlapping
+        for line in message.split('\n'):
+            self.log_lines.append(line)
+        
+        # Keep buffer size reasonable (e.g., 15 lines)
+        while len(self.log_lines) > 15:
             self.log_lines.pop(0)
-            
-    def render_ui(self):
-        """Draws the UI frame. Thread-safe."""
-        self.renderer.clear()
+
+    def render_ui(self, show_prompt=True):
+        """Draws the UI frame using atomic rendering."""
+        # Prepare data for rendering
+        header = ["jaxOS v1.0", "--------------"]
         
-        # We need to schedule the text rendering
-        # Since render_text makes many draw_line calls, we wrap it
-        def _draw():
-            # Draw Header
-            self.renderer.render_text("jaxOS v1.0", 20, 20, self.font)
-            self.renderer.render_text("--------------", 20, 50, self.font)
+        # Format log lines
+        formatted_logs = []
+        for line in self.log_lines:
+            formatted_logs.append(line)
             
-            # Draw Log
-            y = 80
-            for line in self.log_lines:
-                display_text = line[:25]
-                self.renderer.render_text(display_text, 20, y, self.font)
-                y += 45
+        prompt = "USER@NEURO> " if show_prompt else ""
         
-        # Execute drawing on main thread
-        self.renderer.root.after(0, _draw)
+        self.renderer.render_screen(
+            header, 
+            formatted_logs, 
+            prompt, 
+            self.renderer.current_input
+        )
 
     def boot(self):
         self.log("jaxOS v1.0 Booting...")
-        self.render_ui()
+        self.render_ui(show_prompt=False)
         
         self.log("[*] Init Neural Shim...")
-        self.render_ui()
+        self.render_ui(show_prompt=False)
         
         if self._check_ollama():
             self.log("[+] Cortex Online.")
@@ -116,12 +123,11 @@ class NeuralKernel:
             self.log("[-] Cortex Offline.")
             
         self.log("[*] Mounting VFS...")
-        self.render_ui()
+        self.render_ui(show_prompt=False)
         time.sleep(1)
         self.log("System Ready.")
-        self.render_ui()
+        self.render_ui(show_prompt=True)
 
-    # ... (_check_ollama, _llm_inference, execute_syscall remain same) ...
     def _check_ollama(self) -> bool:
         try:
             url = "http://127.0.0.1:11434/api/tags"
@@ -145,7 +151,6 @@ class NeuralKernel:
             with urllib.request.urlopen(req) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 raw_response = result.get("response", "{}")
-                self.log(f"[DEBUG] Raw LLM: {raw_response}")
                 return raw_response
         except Exception as e:
             self.log(f"[!] Inference Error: {e}")
@@ -156,7 +161,7 @@ class NeuralKernel:
         params = intent.get("params", {})
         
         self.log(f"Exec: {action}")
-        self.render_ui()
+        self.render_ui(show_prompt=False)
         
         if action == "create_file":
             path = params.get("path")
@@ -168,6 +173,7 @@ class NeuralKernel:
             path = params.get("path")
             if path in self.fs_state:
                 self.log(f"Read {path}")
+                self.log(self.fs_state[path])
             else:
                 self.log(f"Error: {path} 404")
                 
@@ -188,11 +194,23 @@ class NeuralKernel:
         elif action == "system_status":
             self.log("RAM: 16KB Used")
             self.log(f"Cortex: {MODEL_NAME}")
+
+        elif action == "browse":
+            url = params.get("url")
+            self.log(f"Browsing: {url}...")
+            self.render_ui(show_prompt=False)
+            
+            summary = browser.fetch_and_summarize(url, self._llm_inference)
+            self.log("--- PAGE SUMMARY ---")
+            for line in summary.split('\n'):
+                if line.strip():
+                    self.log(line.strip())
+            self.log("--------------------")
             
         elif action == "unknown":
             self.log("Unknown Intent")
             
-        self.render_ui()
+        self.render_ui(show_prompt=True)
 
     def kernel_loop(self):
         """The Input Loop running in a background thread."""
@@ -200,11 +218,21 @@ class NeuralKernel:
         
         while self.running:
             try:
-                # Console input blocks this thread, but GUI thread keeps running
-                user_input = input("\nUSER@NEURO> ")
+                # Update UI to show cursor blinking
+                self.render_ui(show_prompt=True)
+                
+                # Poll for input from GUI
+                try:
+                    # Wait for input from GUI (100ms timeout to allow UI updates)
+                    user_input = self.renderer.input_queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+
+                self.log(f"USER@NEURO> {user_input}")
+                
                 if user_input.lower() in ["exit", "quit", "shutdown"]:
                     self.log("Shutting down...")
-                    self.render_ui()
+                    self.render_ui(show_prompt=False)
                     self.running = False
                     self.renderer.stop() # Kill GUI
                     break
@@ -212,10 +240,15 @@ class NeuralKernel:
                 if not user_input.strip():
                     continue
 
+                # Show Thinking... but don't persist it forever
                 self.log("Thinking...")
-                self.render_ui()
+                self.render_ui(show_prompt=False) # Hide prompt while thinking
                 
                 llm_response = self._llm_inference(user_input)
+                
+                # Remove "Thinking..." from log
+                if self.log_lines and self.log_lines[-1] == "Thinking...":
+                    self.log_lines.pop()
                 
                 intent = self.parser.parse(llm_response)
                 self.execute_syscall(intent)
@@ -224,7 +257,7 @@ class NeuralKernel:
                 break
             except Exception as e:
                 self.log(f"Panic: {e}")
-                self.render_ui()
+                self.render_ui(show_prompt=True)
 
     def run(self):
         # Start Kernel Loop in background thread
