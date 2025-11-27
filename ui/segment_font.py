@@ -30,18 +30,11 @@ class SegmentFont:
         #    | L|M |
         #     -----
         #       D
-        
-    def draw_line(self, x1, y1, x2, y2, brightness=1.0):
-        """
-        Mock hardware draw_line function.
-        In a real Unikernel, this writes to the Framebuffer memory map.
-        """
-        # For simulation, we just print the vector command
-        print(f"DRAW_LINE({x1}, {y1}) -> ({x2}, {y2}) [Opacity: {brightness}]")
 
-    def draw_char(self, char: str, x: int, y: int):
+    def draw_char(self, char: str, x: int, y: int, draw_func):
         """
-        Draws a single character at (x, y).
+        Draws a single character at (x, y) using the provided draw_func.
+        draw_func signature: (x1, y1, x2, y2, brightness)
         """
         char = char.upper()
         w = self.width
@@ -85,16 +78,16 @@ class SegmentFont:
         
         if not active_segments:
             # Draw a box for unknown char
-            self.draw_line(x0, y0, x1, y0)
-            self.draw_line(x1, y0, x1, y1)
-            self.draw_line(x1, y1, x0, y1)
-            self.draw_line(x0, y1, x0, y0)
+            draw_func(x0, y0, x1, y0, 1.0)
+            draw_func(x1, y0, x1, y1, 1.0)
+            draw_func(x1, y1, x0, y1, 1.0)
+            draw_func(x0, y1, x0, y0, 1.0)
             return
 
         for seg_id in active_segments:
             if seg_id in segments:
                 start, end = segments[seg_id]
-                self.draw_line(start[0], start[1], end[0], end[1])
+                draw_func(start[0], start[1], end[0], end[1], 1.0)
 
 # Test block
 if __name__ == "__main__":

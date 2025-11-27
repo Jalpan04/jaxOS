@@ -24,174 +24,215 @@ import urllib.request
 import urllib.error
 from typing import Dict, Any
 
+import threading
+import queue
+
 # Import internal modules
-# Note: In a real Unikernel, these would be frozen modules.
 try:
     from intent_parser import IntentParser
+    # Import UI modules
+    sys.path.append('ui')
+    from tk_renderer import TkRenderer
+    from segment_font import SegmentFont
 except ImportError:
     # Handle running from root directory
     sys.path.append('kernel')
-    from intent_parser import IntentParser
+    sys.path.append('ui')
+    from tk_renderer import TkRenderer
+    from segment_font import SegmentFont
 
 # Configuration
-OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 MODEL_NAME = "gemma3:12b"
-
 SYSTEM_PROMPT = """
-You are the Kernel of NEURO-CASIO OS, a retro-futurist AI operating system.
-Your goal is to interpret user natural language commands and convert them into JSON system calls.
-
-Capabilities:
-- File System: create_file, read_file, delete_file, list_files
-- System: system_status
-
-Output Format:
-You MUST output ONLY valid JSON. No markdown, no explanations.
-Schema: {"action": "action_name", "params": {"param1": "value1"}}
-
-Examples:
-User: "Create a file named notes.txt saying hello world"
-Output: {"action": "create_file", "params": {"path": "notes.txt", "content": "hello world"}}
-
-User: "What files do I have?"
-Output: {"action": "list_files", "params": {}}
-
-User: "Delete the notes file"
-Output: {"action": "delete_file", "params": {"path": "notes.txt"}}
-
-User: "System status"
-Output: {"action": "system_status", "params": {}}
+You are the kernel of jaxOS, an AI-native operating system.
+Your goal is to interpret user intent and translate it into system calls.
+Output ONLY valid JSON matching this schema:
+{
+  "action": "create_file" | "read_file" | "delete_file" | "list_files" | "system_status",
+  "params": { ...arguments... }
+}
+Example:
+{
+  "action": "create_file",
+  "params": { "path": "test.txt", "content": "hello" }
+}
 """
 
 class NeuralKernel:
     def __init__(self):
         self.parser = IntentParser()
         self.running = True
-        self.fs_state = {} # Mock in-memory FS for now
+        self.fs_state = {} 
+        
+        # Initialize UI
+        self.renderer = TkRenderer()
+        self.font = SegmentFont()
+        self.renderer.font_renderer = self.font
+        
+        # Terminal Log (for display)
+        self.log_lines = []
+        
+        # Input Queue (if we wanted to pass input from GUI, but we use console for now)
+
+    def log(self, message: str):
+        """Logs to console and adds to UI buffer"""
+        print(message)
+        self.log_lines.append(message)
+        if len(self.log_lines) > 10:
+            self.log_lines.pop(0)
+            
+    def render_ui(self):
+        """Draws the UI frame. Thread-safe."""
+        self.renderer.clear()
+        
+        # We need to schedule the text rendering
+        # Since render_text makes many draw_line calls, we wrap it
+        def _draw():
+            # Draw Header
+            self.renderer.render_text("jaxOS v1.0", 20, 20, self.font)
+            self.renderer.render_text("--------------", 20, 50, self.font)
+            
+            # Draw Log
+            y = 80
+            for line in self.log_lines:
+                display_text = line[:25]
+                self.renderer.render_text(display_text, 20, y, self.font)
+                y += 45
+        
+        # Execute drawing on main thread
+        self.renderer.root.after(0, _draw)
 
     def boot(self):
-        print("\033[1;32m") # Green text
-        print("========================================")
-        print("           j a x O S   v1.0             ")
-        print("========================================")
-        print(f"[*] Initializing Neural Shim...")
-        print(f"[*] Connecting to Cortex ({MODEL_NAME})...")
+        self.log("jaxOS v1.0 Booting...")
+        self.render_ui()
+        
+        self.log("[*] Init Neural Shim...")
+        self.render_ui()
         
         if self._check_ollama():
-            print("[+] Cortex Online.")
+            self.log("[+] Cortex Online.")
         else:
-            print("[-] Cortex Offline. Please start Ollama.")
-            sys.exit(1)
+            self.log("[-] Cortex Offline.")
             
-        print("[*] Mounting Vector FS...")
-        print("[*] Starting Casio UI Engine...")
-        print("========================================")
-        print("System Ready. Waiting for intent...")
-        print("\033[0m") # Reset
+        self.log("[*] Mounting VFS...")
+        self.render_ui()
+        time.sleep(1)
+        self.log("System Ready.")
+        self.render_ui()
 
+    # ... (_check_ollama, _llm_inference, execute_syscall remain same) ...
     def _check_ollama(self) -> bool:
         try:
-            req = urllib.request.Request(OLLAMA_URL)
-            # Just checking connectivity, not sending data yet
-            # Actually api/generate expects POST, so a GET might fail 404 or 405, 
-            # but connection refused means it's down.
-            # Let's try a simple tags list or version check if possible, 
-            # but for now just assuming if we can connect it's up.
-            # We'll just try to open the base URL or tags endpoint.
-            with urllib.request.urlopen("http://localhost:11434/api/tags") as response:
+            url = "http://127.0.0.1:11434/api/tags"
+            with urllib.request.urlopen(url) as response:
                 return response.status == 200
-        except urllib.error.URLError:
-            return False
-        except Exception:
+        except Exception as e:
+            self.log(f"[!] Cortex Connection Error: {e}")
             return False
 
     def _llm_inference(self, user_input: str) -> str:
-        """
-        Sends the user input to the local LLM and gets the JSON response.
-        """
         payload = {
             "model": MODEL_NAME,
             "prompt": user_input,
             "system": SYSTEM_PROMPT,
             "stream": False,
-            "format": "json" # Force JSON mode if supported by model/ollama version
+            "format": "json"
         }
-        
         data = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(OLLAMA_URL, data=data, headers={'Content-Type': 'application/json'})
-        
         try:
             with urllib.request.urlopen(req) as response:
                 result = json.loads(response.read().decode('utf-8'))
-                return result.get("response", "{}")
+                raw_response = result.get("response", "{}")
+                self.log(f"[DEBUG] Raw LLM: {raw_response}")
+                return raw_response
         except Exception as e:
-            print(f"[!] Inference Error: {e}")
+            self.log(f"[!] Inference Error: {e}")
             return "{}"
 
     def execute_syscall(self, intent: Dict[str, Any]):
         action = intent.get("action")
         params = intent.get("params", {})
         
-        print(f"\n[KERNEL] Executing SysCall: {action}")
+        self.log(f"Exec: {action}")
+        self.render_ui()
         
         if action == "create_file":
             path = params.get("path")
             content = params.get("content", "")
             self.fs_state[path] = content
-            print(f"[FS] Created {path} ({len(content)} bytes)")
+            self.log(f"Created {path}")
             
         elif action == "read_file":
             path = params.get("path")
             if path in self.fs_state:
-                print(f"[FS] Content of {path}:\n{self.fs_state[path]}")
+                self.log(f"Read {path}")
             else:
-                print(f"[FS] Error: File {path} not found.")
+                self.log(f"Error: {path} 404")
                 
         elif action == "delete_file":
             path = params.get("path")
             if path in self.fs_state:
                 del self.fs_state[path]
-                print(f"[FS] Deleted {path}")
+                self.log(f"Deleted {path}")
             else:
-                print(f"[FS] Error: File {path} not found.")
+                self.log(f"Error: {path} 404")
                 
         elif action == "list_files":
             files = list(self.fs_state.keys())
-            print(f"[FS] Files: {files}")
+            self.log(f"Files: {len(files)}")
+            for f in files[:3]:
+                self.log(f"- {f}")
             
         elif action == "system_status":
-            print("[SYS] RAM: 16KB / 64KB Used")
-            print(f"[SYS] Cortex: {MODEL_NAME} (Active)")
-            print("[SYS] Uptime: Forever")
+            self.log("RAM: 16KB Used")
+            self.log(f"Cortex: {MODEL_NAME}")
             
         elif action == "unknown":
-            print(f"[!] Unknown Intent: {intent.get('reason')}")
+            self.log("Unknown Intent")
+            
+        self.render_ui()
 
-    def run(self):
+    def kernel_loop(self):
+        """The Input Loop running in a background thread."""
         self.boot()
         
         while self.running:
             try:
+                # Console input blocks this thread, but GUI thread keeps running
                 user_input = input("\nUSER@NEURO> ")
                 if user_input.lower() in ["exit", "quit", "shutdown"]:
-                    print("Shutting down...")
+                    self.log("Shutting down...")
+                    self.render_ui()
+                    self.running = False
+                    self.renderer.stop() # Kill GUI
                     break
                 
                 if not user_input.strip():
                     continue
 
-                print("Thinking...", end="", flush=True)
+                self.log("Thinking...")
+                self.render_ui()
+                
                 llm_response = self._llm_inference(user_input)
-                print("\r", end="") # Clear "Thinking..."
                 
                 intent = self.parser.parse(llm_response)
                 self.execute_syscall(intent)
                 
-            except KeyboardInterrupt:
-                print("\n[!] Interrupt detected. Shutting down.")
+            except EOFError:
                 break
             except Exception as e:
-                print(f"\n[!] Kernel Panic: {e}")
+                self.log(f"Panic: {e}")
+                self.render_ui()
+
+    def run(self):
+        # Start Kernel Loop in background thread
+        t = threading.Thread(target=self.kernel_loop, daemon=True)
+        t.start()
+        
+        # Start GUI in main thread (Blocking)
+        self.renderer.start()
 
 if __name__ == "__main__":
     kernel = NeuralKernel()

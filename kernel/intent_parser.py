@@ -43,9 +43,24 @@ class IntentParser:
             clean_response = self._extract_json(llm_response)
             intent = json.loads(clean_response)
             
+            # Normalize LLM response
+            if "intent" in intent and "action" not in intent:
+                intent["action"] = intent["intent"]
+            
             if "action" not in intent:
                 return {"action": "unknown", "reason": "Missing 'action' field"}
             
+            # Normalize params
+            if "params" not in intent:
+                # If params are missing, assume the rest of the dict are params
+                intent["params"] = {k: v for k, v in intent.items() if k not in ["action", "intent"]}
+
+            # Map specific LLM hallucinations to correct params
+            if "filename" in intent["params"] and "path" not in intent["params"]:
+                intent["params"]["path"] = intent["params"]["filename"]
+            if "file_content" in intent["params"] and "content" not in intent["params"]:
+                intent["params"]["content"] = intent["params"]["file_content"]
+
             if intent["action"] not in self.valid_actions:
                 return {"action": "unknown", "reason": f"Invalid action: {intent['action']}"}
                 
@@ -72,8 +87,11 @@ class IntentParser:
             if end != -1:
                 return text[start:end].strip()
         
-        # If no code blocks, assume the whole text might be JSON
-        if text.startswith("{") and text.endswith("}"):
-            return text
+        # If no code blocks, try to find the JSON object manually
+        start_idx = text.find("{")
+        end_idx = text.rfind("}")
+        
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            return text[start_idx:end_idx+1]
             
         return "{}" # Fallback

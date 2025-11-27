@@ -39,30 +39,42 @@ class VectorDB:
         with open(self.db_path, "w") as f:
             json.dump(self.vectors, f)
 
-    def _mock_embedding(self, text: str) -> List[float]:
+    def _get_embedding(self, text: str) -> List[float]:
         """
-        Generates a mock embedding vector.
-        In a real system, this would call the LLM or a specialized embedding model.
-        Here we use a deterministic hash-based projection for demonstration.
+        Generates a real embedding vector using Ollama (nomic-embed-text).
         """
-        # Create a 64-dim vector based on character frequencies and hashing
-        vector = [0.0] * 64
-        for i, char in enumerate(text):
-            idx = (ord(char) + i) % 64
-            vector[idx] += 1.0
+        url = "http://127.0.0.1:11434/api/embeddings"
+        payload = {
+            "model": "nomic-embed-text",
+            "prompt": text
+        }
         
-        # Normalize
+        try:
+            import urllib.request
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                return result.get("embedding", [])
+        except Exception as e:
+            print(f"[VFS] Embedding Error: {e}")
+            # Fallback to mock if offline
+            return self._mock_embedding(text)
+
+    def _mock_embedding(self, text: str) -> List[float]:
+        """Fallback deterministic embedding"""
+        vector = [0.0] * 768 # nomic-embed-text is 768d
+        for i, char in enumerate(text):
+            idx = (ord(char) + i) % 768
+            vector[idx] += 1.0
         magnitude = math.sqrt(sum(x*x for x in vector))
-        if magnitude > 0:
-            vector = [x / magnitude for x in vector]
-            
-        return vector
+        return [x / magnitude for x in vector] if magnitude > 0 else vector
 
     def save_file(self, content: str, metadata: Dict):
         """
         Saves a file by generating its embedding and storing it.
         """
-        vector = self._mock_embedding(content)
+        vector = self._get_embedding(content)
         entry = {
             "id": len(self.vectors),
             "vector": vector,
@@ -91,7 +103,7 @@ class VectorDB:
         """
         Finds the nearest files to the query string.
         """
-        query_vec = self._mock_embedding(query)
+        query_vec = self._get_embedding(query)
         results = []
         
         for entry in self.vectors:
