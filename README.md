@@ -13,7 +13,7 @@
 ## 🚀 Features
 
 ### 🧠 Neural Kernel
--   **Intent-Driven Execution**: The kernel parses natural language commands (e.g., "What is the capital of France?") using a local LLM (`gemma3:12b`).
+-   **Intent-Driven Execution**: The kernel parses natural language command using a local LLM (`gemma3:12b`).
 -   **Hybrid Shell**: Supports both traditional commands (`ls`, `cd`) and AI queries.
 
 ### 🖥️ Unified Grid UI
