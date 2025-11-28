@@ -19,15 +19,10 @@ class IntentParser:
     """
 
     def __init__(self):
-        self.valid_actions = {
-            "create_file",
-            "read_file",
-            "delete_file",
-            "list_files",
-            "system_status",
-            "browse",
-            "unknown"
-        }
+        self.valid_actions = [
+            "create_file", "read_file", "delete_file", "list_files", 
+            "system_status", "browse", "launch_app", "unknown"
+        ]
 
     def parse(self, llm_response: str) -> Dict[str, Any]:
         """
@@ -48,21 +43,25 @@ class IntentParser:
             if "intent" in intent and "action" not in intent:
                 intent["action"] = intent["intent"]
             
+            # Heuristic: If action is missing but input starts with "launch", "open", "run"
             if "action" not in intent:
                 return {"action": "unknown", "reason": "Missing 'action' field"}
-            
+
             # Normalize params
             if "params" not in intent:
-                # If params are missing, assume the rest of the dict are params
                 intent["params"] = {k: v for k, v in intent.items() if k not in ["action", "intent"]}
 
-            # Map specific LLM hallucinations to correct params
+            # Map specific LLM hallucinations
             if "filename" in intent["params"] and "path" not in intent["params"]:
                 intent["params"]["path"] = intent["params"]["filename"]
             if "file_content" in intent["params"] and "content" not in intent["params"]:
                 intent["params"]["content"] = intent["params"]["file_content"]
             if "website" in intent["params"] and "url" not in intent["params"]:
                 intent["params"]["url"] = intent["params"]["website"]
+            
+            # Map 'app' param to 'name'
+            if "app" in intent["params"] and "name" not in intent["params"]:
+                intent["params"]["name"] = intent["params"]["app"]
 
             if intent["action"] not in self.valid_actions:
                 return {"action": "unknown", "reason": f"Invalid action: {intent['action']}"}

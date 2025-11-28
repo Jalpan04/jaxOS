@@ -16,24 +16,15 @@ must be marshaled to the Main thread using `root.after` or a queue.
 import tkinter as tk
 import time
 import queue
-from typing import Tuple, Callable
+from typing import Tuple, Callable, List
+from widgets import Widget, Label, Button
 
 # Colors
 COLOR_BLACK = "#000000"
 COLOR_GREEN = "#00FF32"
 COLOR_DIM_GREEN = "#006414"
+COLOR_WHITE = "#FFFFFF"
 
-class TkRenderer:
-    def __init__(self, width=640, height=480):
-        self.width = width
-        self.height = height
-        self.font_renderer = None # Will be injected
-        
-        # Initialize Tkinter
-        self.root = tk.Tk()
-        self.root.title("jaxOS // Neural Kernel")
-        self.root.geometry(f"{width}x{height}")
-        self.root.configure(bg=COLOR_BLACK)
 class TkRenderer:
     def __init__(self, width=640, height=480):
         self.width = width
@@ -57,11 +48,6 @@ class TkRenderer:
         )
         self.canvas.pack(fill="both", expand=True)
         
-        # Ghosting layer (simulated by not clearing fully or using semi-transparent rectangles)
-        # Tkinter doesn't support alpha on canvas primitives easily without PIL.
-        # We will simulate ghosting by clearing the screen less frequently or 
-        # just redrawing everything. For simplicity in Tkinter, we'll just clear.
-
         # Scrollbar
         self.scrollbar = tk.Scrollbar(self.root, orient="vertical", command=self.canvas.yview)
         self.scrollbar.pack(side="right", fill="y")
@@ -71,6 +57,7 @@ class TkRenderer:
         self.input_queue = queue.Queue()
         self.current_input = ""
         self.root.bind('<Key>', self.on_key)
+        self.root.bind('<Button-1>', self.on_click) # Mouse Click
         
         # Font State
         self.font_size = 14
@@ -87,6 +74,20 @@ class TkRenderer:
         self.last_prompt = ""
         self.last_input = ""
         
+        # Widgets List
+        # Widgets List
+        self.widgets: List[Widget] = []
+        
+        # Cursor State
+        self.cursor_visible = True
+        self._blink_cursor()
+
+    def _blink_cursor(self):
+        """Toggles cursor visibility every 500ms."""
+        self.cursor_visible = not self.cursor_visible
+        self.render_last_frame()
+        self.root.after(500, self._blink_cursor)
+
     def increase_font(self, event):
         self.font_size += 2
         self.render_last_frame()
@@ -117,12 +118,22 @@ class TkRenderer:
         except:
             pass
             
+    def on_click(self, event):
+        """Handle mouse clicks on widgets."""
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+        
+        for widget in self.widgets:
+            if widget.on_click(canvas_x, canvas_y):
+                return # Handled
+            
     def get_input(self):
         """Blocking get from input queue."""
         return self.input_queue.get()
 
     def start(self):
         """Starts the Tkinter main loop. Blocking."""
+        self._blink_cursor() # Start blinking
         self.root.mainloop()
 
     def stop(self):
@@ -131,9 +142,10 @@ class TkRenderer:
         
     def render_last_frame(self):
         if hasattr(self, 'last_header'):
-            self.render_screen(self.last_header, self.last_logs, self.last_prompt, self.last_input)
+            start_y = getattr(self, 'last_start_y', 30)
+            self.render_screen(self.last_header, self.last_logs, self.last_prompt, self.last_input, start_y)
 
-    def render_screen(self, header_lines, log_lines, input_prompt, current_input):
+    def render_screen(self, header_lines, log_lines, input_prompt, current_input, start_y=30):
         """
         Atomically renders the entire screen frame with dynamic wrapping and scrolling.
         """
@@ -142,11 +154,11 @@ class TkRenderer:
         self.last_logs = log_lines
         self.last_prompt = input_prompt
         self.last_input = current_input
+        self.last_start_y = start_y
 
         def _draw():
             # Check if at bottom before clearing
             try:
-                # yview returns (top, bottom) fractions. If bottom is near 1.0, we are at the bottom.
                 was_at_bottom = self.canvas.yview()[1] >= 0.95
             except:
                 was_at_bottom = True
@@ -156,8 +168,22 @@ class TkRenderer:
             max_text_width = width - 40
             font_spec = ("Courier New", self.font_size, "bold")
             
+            # --- STATUS BAR ---
+            status_text = time.strftime("%H:%M:%S") + " | MEM: 64KB | NET: ON"
+            self.canvas.create_text(
+                width - 10, 10,
+                text=status_text,
+                fill=COLOR_DIM_GREEN,
+                font=("Courier New", 12),
+                anchor="ne"
+            )
+            
+            # Draw Widgets
+            for widget in self.widgets:
+                widget.draw(self.canvas, self)
+
             # Draw Header
-            y = 20
+            y = start_y 
             for line in header_lines:
                 text_id = self.canvas.create_text(
                     20, y, 
@@ -185,9 +211,10 @@ class TkRenderer:
                 y = bbox[3] + 5
                 
             # Draw Input
-            if input_prompt: # Only draw if prompt is present
-                cursor = "_" if (len(current_input) % 2 == 0) else " "
-                full_input = f"{input_prompt}{current_input}{cursor}"
+            if input_prompt: 
+                # Cursor Logic
+                cursor_char = "_" if self.cursor_visible else " "
+                full_input = f"{input_prompt}{current_input}{cursor_char}"
                 
                 text_id = self.canvas.create_text(
                     20, y + 10, 
@@ -215,13 +242,9 @@ class TkRenderer:
     def render_input_line(self, *args): pass
 
     def boot_sequence(self):
-        """
-        Simulates a CRT turn-on effect.
-        """
         pass
 
 if __name__ == "__main__":
     # Test stub
     r = TkRenderer()
-    r.root.after(1000, lambda: r.draw_line(10, 10, 100, 100))
     r.start()

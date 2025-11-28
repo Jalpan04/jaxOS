@@ -26,25 +26,26 @@ from typing import Dict, Any
 
 import threading
 import queue
+import os
+
+# Setup Paths
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(current_dir)
+
+sys.path.append(root_dir) # For 'apps', 'ui', etc packages
+sys.path.append(os.path.join(root_dir, 'ui')) # For 'tk_renderer'
+sys.path.append(os.path.join(root_dir, 'net')) # For 'browser'
+sys.path.append(os.path.join(root_dir, 'fs')) # For 'db'
+sys.path.append(os.path.join(root_dir, 'kernel')) # For 'intent_parser'
 
 # Import internal modules
-try:
-    from intent_parser import IntentParser
-    # Import UI modules
-    sys.path.append('ui')
-    sys.path.append('net')
-    from tk_renderer import TkRenderer
-    from segment_font import SegmentFont
-    import browser
-except ImportError:
-    # Handle running from root directory
-    sys.path.append('kernel')
-    sys.path.append('ui')
-    sys.path.append('net')
-    from intent_parser import IntentParser
-    from tk_renderer import TkRenderer
-    from segment_font import SegmentFont
-    import browser
+from intent_parser import IntentParser
+from tk_renderer import TkRenderer
+from segment_font import SegmentFont
+import browser
+from db import Database
+from apps.code_studio import CodeStudio
+from apps.calculator import Calculator
 
 # Configuration
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
@@ -54,13 +55,13 @@ You are the kernel of jaxOS, an AI-native operating system.
 Your goal is to interpret user intent and translate it into system calls.
 Output ONLY valid JSON matching this schema:
 {
-  "action": "create_file" | "read_file" | "delete_file" | "list_files" | "system_status" | "browse",
+  "action": "create_file" | "read_file" | "delete_file" | "list_files" | "system_status" | "browse" | "launch_app",
   "params": { ...arguments... }
 }
 Example:
 {
-  "action": "create_file",
-  "params": { "path": "test.txt", "content": "hello" }
+  "action": "launch_app",
+  "params": { "name": "code_studio" }
 }
 """
 
@@ -68,7 +69,9 @@ class NeuralKernel:
     def __init__(self):
         self.parser = IntentParser()
         self.running = True
-        self.fs_state = {} 
+        
+        # Initialize Persistence
+        self.db = Database()
         
         # Initialize UI
         self.renderer = TkRenderer()
@@ -76,38 +79,54 @@ class NeuralKernel:
         self.renderer.font_renderer = self.font
         
         # Terminal Log (for display)
-        self.log_lines = []
+        self.system_log_lines = []
+        self.app_log_lines = []
         
-        # Input Queue (if we wanted to pass input from GUI, but we use console for now)
+        # App State
+        self.active_app = None
+        self.apps = {
+            "code_studio": CodeStudio(self),
+            "python": CodeStudio(self), # Alias
+            "calculator": Calculator(self),
+            "calc": Calculator(self) # Alias
+        }
 
     def log(self, message: str):
         """Logs to console and adds to UI buffer"""
         print(message)
+        
+        # Determine target buffer
+        target_buffer = self.app_log_lines if self.active_app else self.system_log_lines
+        
         # Split message by newlines to prevent UI overlapping
         for line in message.split('\n'):
-            self.log_lines.append(line)
+            target_buffer.append(line)
         
         # Keep buffer size reasonable (e.g., 15 lines)
-        while len(self.log_lines) > 15:
-            self.log_lines.pop(0)
+        while len(target_buffer) > 15:
+            target_buffer.pop(0)
 
     def render_ui(self, show_prompt=True):
         """Draws the UI frame using atomic rendering."""
-        # Prepare data for rendering
-        header = ["jaxOS v1.0", "--------------"]
-        
-        # Format log lines
-        formatted_logs = []
-        for line in self.log_lines:
-            formatted_logs.append(line)
-            
-        prompt = "USER@NEURO> " if show_prompt else ""
+        start_y = 30
+        if self.active_app:
+            # App Mode
+            header = [f"--- {self.active_app.__class__.__name__.upper()} ---"]
+            formatted_logs = list(self.app_log_lines)
+            prompt = "CODE> " if show_prompt else ""
+            start_y = getattr(self.active_app, 'content_start_y', 30)
+        else:
+            # System Mode
+            header = ["jaxOS v1.0", "--------------"]
+            formatted_logs = list(self.system_log_lines)
+            prompt = "USER@NEURO> " if show_prompt else ""
         
         self.renderer.render_screen(
             header, 
             formatted_logs, 
             prompt, 
-            self.renderer.current_input
+            self.renderer.current_input,
+            start_y=start_y
         )
 
     def boot(self):
@@ -156,6 +175,29 @@ class NeuralKernel:
             self.log(f"[!] Inference Error: {e}")
             return "{}"
 
+    def launch_app(self, app_name: str):
+        if app_name in self.apps:
+            # Clear app logs for a fresh start
+            self.app_log_lines = []
+            
+            self.active_app = self.apps[app_name]
+            self.active_app.on_start()
+            self.renderer.widgets = self.active_app.widgets
+            
+            # Don't log "Launched..." to the app buffer to keep it clean
+            # self.log(f"Launched {app_name}") 
+            self.render_ui(show_prompt=True)
+        else:
+            self.log(f"App '{app_name}' not found.")
+
+    def close_app(self):
+        if self.active_app:
+            self.active_app.on_stop()
+            self.active_app = None
+            self.renderer.widgets = [] # Clear widgets
+            self.log("App closed.")
+            self.render_ui(show_prompt=True)
+
     def execute_syscall(self, intent: Dict[str, Any]):
         action = intent.get("action")
         params = intent.get("params", {})
@@ -163,37 +205,44 @@ class NeuralKernel:
         self.log(f"Exec: {action}")
         self.render_ui(show_prompt=False)
         
-        if action == "create_file":
+        if action == "launch_app":
+            self.launch_app(params.get("name", "").lower().replace(" ", "_"))
+            return # Don't re-render here, launch_app handles it
+
+        elif action == "create_file":
             path = params.get("path")
             content = params.get("content", "")
-            self.fs_state[path] = content
-            self.log(f"Created {path}")
+            if self.db.write_file(path, content):
+                self.log(f"Created {path}")
+            else:
+                self.log(f"Error creating {path}")
             
         elif action == "read_file":
             path = params.get("path")
-            if path in self.fs_state:
+            content = self.db.read_file(path)
+            if content is not None:
                 self.log(f"Read {path}")
-                self.log(self.fs_state[path])
+                self.log(content)
             else:
                 self.log(f"Error: {path} 404")
                 
         elif action == "delete_file":
             path = params.get("path")
-            if path in self.fs_state:
-                del self.fs_state[path]
+            if self.db.delete_file(path):
                 self.log(f"Deleted {path}")
             else:
                 self.log(f"Error: {path} 404")
                 
         elif action == "list_files":
-            files = list(self.fs_state.keys())
+            files = self.db.list_files()
             self.log(f"Files: {len(files)}")
-            for f in files[:3]:
+            for f in files[:5]: # Show top 5
                 self.log(f"- {f}")
             
         elif action == "system_status":
             self.log("RAM: 16KB Used")
             self.log(f"Cortex: {MODEL_NAME}")
+            self.log("Storage: SQLite Persistent")
 
         elif action == "browse":
             url = params.get("url")
@@ -228,27 +277,36 @@ class NeuralKernel:
                 except queue.Empty:
                     continue
 
+                if not user_input.strip():
+                    continue
+
+                # APP ROUTING (Priority 1)
+                if self.active_app:
+                    self.active_app.on_input(user_input)
+                    self.render_ui(show_prompt=True)
+                    continue
+
                 self.log(f"USER@NEURO> {user_input}")
                 
+                # Global System Commands (Priority 2)
                 if user_input.lower() in ["exit", "quit", "shutdown"]:
                     self.log("Shutting down...")
                     self.render_ui(show_prompt=False)
                     self.running = False
                     self.renderer.stop() # Kill GUI
                     break
-                
-                if not user_input.strip():
-                    continue
 
-                # Show Thinking... but don't persist it forever
+                # KERNEL ROUTING (LLM)
                 self.log("Thinking...")
                 self.render_ui(show_prompt=False) # Hide prompt while thinking
                 
                 llm_response = self._llm_inference(user_input)
                 
                 # Remove "Thinking..." from log
-                if self.log_lines and self.log_lines[-1] == "Thinking...":
-                    self.log_lines.pop()
+                # We need to check the active buffer
+                target_buffer = self.app_log_lines if self.active_app else self.system_log_lines
+                if target_buffer and target_buffer[-1] == "Thinking...":
+                    target_buffer.pop()
                 
                 intent = self.parser.parse(llm_response)
                 self.execute_syscall(intent)
@@ -269,4 +327,8 @@ class NeuralKernel:
 
 if __name__ == "__main__":
     kernel = NeuralKernel()
-    kernel.run()
+    try:
+        kernel.run()
+    except KeyboardInterrupt:
+        print("\n[!] Force Shutdown.")
+        sys.exit(0)
