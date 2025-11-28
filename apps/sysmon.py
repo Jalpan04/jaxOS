@@ -5,15 +5,18 @@ import random
 
 class SysMon(App):
     def on_start(self):
-        self.log("SYSTEM MONITOR")
-        self.log("Press Q to quit.")
+        # Don't log text, use Labels to avoid overlap with shell prompt
         self.running = True
         self.build_ui()
         self._tick()
 
     def build_ui(self):
-        # Main Container
-        self.main_panel = Panel(20, 60, 600, 300)
+        # Title Labels
+        self.widgets.append(Label(20, 50, "SYSTEM MONITOR", font_size=18, color="#00FF32"))
+        self.widgets.append(Label(20, 75, "Press Q to quit.", font_size=12, color="#006414"))
+
+        # Main Container (Moved down to avoid prompt overlap)
+        self.main_panel = Panel(20, 100, 600, 300)
         self.main_panel.bg_color = "#000000" # Transparent-ish
         self.widgets.append(self.main_panel)
         

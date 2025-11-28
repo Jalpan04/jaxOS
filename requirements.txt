@@ -1,0 +1,6 @@
+# No external Python dependencies required.
+# jaxOS uses only the Python Standard Library (tkinter, sqlite3, urllib, etc).
+#
+# You DO need:
+# 1. Python 3.10+
+# 2. Ollama (running externally)

@@ -1,65 +1,74 @@
-# jaxOS
-> *A Python-First Unikernel with a Neural Inference Loop and Generative UI.*
+# jaxOS v3.5 🧠
+> *A Python-First Simulated Operating System with a Neural Kernel and Unified Grid UI.*
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Status](https://img.shields.io/badge/status-Research%20Prototype-orange.svg)
+![Status](https://img.shields.io/badge/status-Stable-green.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-yellow.svg)
+![AI](https://img.shields.io/badge/AI-Neural%20Kernel-purple.svg)
 
-## 1. Abstract
-**NEURO-CASIO OS** represents a paradigm shift from traditional interrupt-driven operating systems to an **AI-Native, Intent-Driven Architecture**. By replacing the traditional `while(1)` kernel loop with a continuous **Inference Loop**, the OS moves beyond rigid system calls to fluid, semantic intent execution.
+**jaxOS** is an experimental operating system simulation that explores the intersection of traditional OS architecture and modern AI. It features a **Neural Kernel** that uses a Large Language Model (LLM) to interpret user intent, a **Unified Grid UI** for consistent application design, and a robust **Filesystem Shell**.
 
-This project implements the "Python Paradox" architecture: a minimal C/Assembly shim that immediately yields control to a high-performance Python runtime, proving that modern embedded Python is sufficient for kernel-space logic when augmented with Neural capabilities.
+---
 
-## 2. Architectural Pillars
+## 🚀 Features
 
-### 2.1 The Neural Kernel (Cortex Layer)
-Unlike Linux or Windows, the kernel does not wait for hardware interrupts in a vacuum. It actively polls a Large Language Model (LLM) to interpret the user's high-level intent.
-- **Traditional:** `User Input -> Scancode -> Driver -> SysCall`
-- **Neuro-Casio:** `User Input -> Tokenization -> LLM Inference -> Semantic Intent -> Python Function`
+### 🧠 Neural Kernel
+-   **Intent-Driven Execution**: The kernel parses natural language commands (e.g., "What is the capital of France?") using a local LLM (`gemma3:12b`).
+-   **Hybrid Shell**: Supports both traditional commands (`ls`, `cd`) and AI queries.
 
-### 2.2 The Semantic File System (Vector Space)
-We discard the hierarchical directory structure (inode/FAT) in favor of a **High-Dimensional Vector Space**.
-- Files are addressed by their semantic content, not their path.
-- Retrieval is performed via Cosine Similarity search.
-- `fs.open("that budget report from last week")` works natively.
+### 🖥️ Unified Grid UI
+-   **Procedural Rendering**: A custom `TkRenderer` draws a retro-futurist, monochrome interface.
+-   **Grid Layout Engine**: Applications use a responsive `Panel` and `GridLayout` system.
+-   **Apps**:
+    -   **Calculator**: A fully functional grid-based calculator.
+    -   **SysMon**: Real-time system monitoring (CPU, RAM, Network).
+    -   **Notes**: A text editor with toolbar and file I/O.
+    -   **Code Studio**: A Python REPL environment.
+    -   **Clock**: A digital timer.
 
-### 2.3 The "Casio" Visual Engine
-A generative, code-only UI system inspired by retro-futurist digital watch aesthetics.
-- No bitmaps or static assets.
-- All UI elements are drawn procedurally using vector primitives.
-- The UI state is hallucinated by the LLM based on the current context.
+### 📦 System Management
+-   **Filesystem Shell**: Full support for `ls`, `cd`, `mkdir`, `rmdir`, `cat`, `pwd`.
+-   **Package Manager (`map`)**: Install and remove apps dynamically (`map list`, `map install`).
+-   **Authentication**: Secure login with password hashing and recovery keys.
 
-## 3. Simulation & Usage
+---
 
-### Prerequisites
-- Python 3.10+
-- [Ollama](https://ollama.com/) running locally
-- Model: `gemma3:12b` (`ollama pull gemma3:12b`)
+## 🛠️ Quick Start
 
-### Running the Simulation
-This codebase simulates the Unikernel environment on your host OS.
+### Run from Source
+1.  **Clone the Repository**:
+    ```bash
+    git clone https://github.com/Jalpan04/jaxOS.git
+    cd jaxOS
+    ```
 
-1. **Start Ollama:**
-   Ensure Ollama is running and listening on port 11434.
+2.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-2. **Boot the Kernel:**
-   ```bash
-   python kernel/main.py
-   ```
+3.  **Boot the OS**:
+    ```bash
+    python kernel/main.py
+    ```
 
-3. **Interaction:**
-   The "Natural Shell" will accept raw English commands.
-   > "Create a file named notes.txt with a reminder to buy milk."
-   > "Show me the system status."
+> **Note**: For AI features, ensure [Ollama](https://ollama.com/) is running with `gemma3:12b`.
 
-## 4. Directory Structure
-- `/boot`: Minimal bootloader stubs (Assembly/C).
-- `/hal`: Hardware Abstraction Layer and C-FFI bindings.
-- `/kernel`: The core Python runtime and Neural Loop.
-- `/fs`: Vector-based file system implementation.
-- `/ui`: Procedural graphics engine.
-- `/tools`: Build and simulation scripts.
+---
 
-## 5. Research Goals
-- Validate the latency/utility trade-off of an LLM-driven kernel loop.
-- Demonstrate the viability of "Python-on-Bare-Metal" for complex OS logic.
-- Explore non-hierarchical file organization paradigms.
+## 🏗️ Architecture
+
+-   **Kernel**: `kernel/main.py` - The central event loop and syscall handler.
+-   **UI**: `ui/tk_renderer.py` - Tkinter-based rendering engine.
+-   **Filesystem**: `fs/db.py` - SQLite-backed flat filesystem with virtual directories.
+-   **AI Bridge**: `kernel/intent_parser.py` - Interfaces with Ollama for NLU.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a deep dive.
+
+---
+
+## 🤝 Contributing
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## 📄 License
+MIT License. See [LICENSE](LICENSE) for details.

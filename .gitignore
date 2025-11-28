@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS Generated
+system.db
+*.log
+
+# Build Artifacts
+dist/
+build/
+*.spec
+*.exe
+boot.exe
+
+# Media
+*.avi
+*.mp4
+*.png
+
+# Environment
+.env
+venv/
