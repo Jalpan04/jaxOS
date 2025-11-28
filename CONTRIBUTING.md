@@ -1,34 +1,44 @@
-# Contributing to NEURO-CASIO OS
+# Contributing to jaxOS
 
-Thank you for your interest in this research project. We are exploring the frontiers of AI-Native Operating Systems.
+Thank you for your interest in contributing to jaxOS! We welcome pull requests from developers of all skill levels.
 
-## Code Style & Standards
+## 🚀 Getting Started
 
-### 1. The "Python-First" Philosophy
-- **Python is the Kernel:** All logic that *can* be written in Python *must* be written in Python.
-- **C is for Plumbing:** Use C only for low-level hardware access or performance-critical FFI bridges.
+1.  **Fork the Repository**: Click the "Fork" button on GitHub.
+2.  **Clone your Fork**:
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/jaxOS.git
+    cd jaxOS
+    ```
+3.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+4.  **Set up AI**: Ensure you have [Ollama](https://ollama.com/) installed and run `ollama pull gemma3:12b`.
 
-### 2. Formatting
-- We follow **PEP 8**.
-- Use **Black** for code formatting.
-- **Type Hints** are mandatory for all function signatures.
-  ```python
-  def calculate_vector(input_str: str) -> list[float]:
-      ...
-  ```
+## 🛠️ Development Workflow
 
-### 3. Documentation
-- Every module and class must have a Docstring explaining its role in the "Neural Architecture".
-- Comments should explain the *why*, not just the *how*.
+1.  **Create a Branch**: `git checkout -b feature/my-cool-feature`
+2.  **Code**:
+    -   **Apps**: Create new apps in `apps/`. Use `apps/template.py` as a guide.
+    -   **Kernel**: Core logic goes in `kernel/`. Be careful with the event loop!
+    -   **UI**: Add new widgets in `ui/widgets.py`.
+3.  **Test**: Run `python kernel/main.py` and verify your changes.
+4.  **Commit**: Use clear commit messages (e.g., "feat: Added Weather app").
+5.  **Push**: `git push origin feature/my-cool-feature`
+6.  **Pull Request**: Open a PR on the main repository.
 
-## Development Workflow
+## 🎨 Design Guidelines
 
-1. **Fork & Clone** the repository.
-2. **Install Dependencies:** `pip install -r requirements.txt` (if applicable).
-3. **Run the Kernel:** Test your changes by running `kernel/main.py`.
-4. **Submit a Pull Request** with a detailed description of your architectural changes.
+-   **Aesthetic**: Stick to the "Cyberpunk/Retro" terminal look. Green text, black background.
+-   **Code Style**: Follow PEP 8. Keep functions small and readable.
+-   **No Assets**: Do not add images or binary assets. Use procedural drawing.
 
-## Training the Kernel
-If you are modifying the `_llm_runtime` or the system prompts:
-- Ensure you are using `gemma3:12b` as the baseline model.
-- Document any prompt engineering changes in `kernel/intent_parser.py`.
+## 🐛 Reporting Bugs
+
+Please open an issue on GitHub with:
+-   Steps to reproduce.
+-   Expected behavior vs. actual behavior.
+-   Screenshots (if applicable).
+
+Happy Hacking! 🤖
