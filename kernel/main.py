@@ -45,6 +45,7 @@ from segment_font import SegmentFont
 import browser
 from db import Database
 from auth import AuthManager
+from package_manager import PackageManager
 from apps.code_studio import CodeStudio
 from apps.calculator import Calculator
 
@@ -74,6 +75,7 @@ class NeuralKernel:
         # Initialize Persistence
         self.db = Database()
         self.auth = AuthManager(self.db)
+        self.pkg_mgr = PackageManager(os.path.join(root_dir, 'apps'))
         
         # Auth State
         self.login_state = "BOOT" # BOOT, SETUP, LOGIN, LOGGED_IN, RECOVERY
@@ -97,6 +99,40 @@ class NeuralKernel:
             "calculator": Calculator(self),
             "calc": Calculator(self) # Alias
         }
+        self._load_installed_apps()
+
+    def _load_installed_apps(self):
+        """Dynamically loads apps from the apps/ directory."""
+        import importlib.util
+        import sys
+        
+        apps_dir = os.path.join(root_dir, 'apps')
+        if not os.path.exists(apps_dir):
+            return
+
+        for filename in os.listdir(apps_dir):
+            if filename.endswith(".py") and filename not in ["__init__.py", "base.py", "code_studio.py", "calculator.py"]:
+                module_name = filename[:-3]
+                file_path = os.path.join(apps_dir, filename)
+                
+                try:
+                    spec = importlib.util.spec_from_file_location(f"apps.{module_name}", file_path)
+                    if spec and spec.loader:
+                        module = importlib.util.module_from_spec(spec)
+                        sys.modules[f"apps.{module_name}"] = module
+                        spec.loader.exec_module(module)
+                        
+                        # Find App subclass
+                        from apps.base import App
+                        for attr_name in dir(module):
+                            attr = getattr(module, attr_name)
+                            if isinstance(attr, type) and issubclass(attr, App) and attr is not App:
+                                # Register App
+                                app_instance = attr(self)
+                                self.apps[module_name] = app_instance
+                                self.log(f"Loaded App: {module_name}")
+                except Exception as e:
+                    print(f"Failed to load {module_name}: {e}")
 
     def log(self, message: str):
         """Logs to console and adds to UI buffer"""
@@ -467,6 +503,37 @@ class NeuralKernel:
                     self.render_ui(show_prompt=True)
                     continue
 
+                elif cmd.startswith("map"):
+                    parts = cmd.split(" ")
+                    if len(parts) < 2:
+                        self.log("Usage: map <list|install|remove> [app]")
+                    else:
+                        subcmd = parts[1]
+                        if subcmd == "list":
+                            apps = self.pkg_mgr.list_apps()
+                            self.log("--- AVAILABLE APPS ---")
+                            for name, status in apps:
+                                self.log(f"- {name} [{status}]")
+                        elif subcmd == "install" and len(parts) > 2:
+                            app_name = parts[2]
+                            if self.pkg_mgr.install(app_name):
+                                self.log(f"Successfully installed {app_name}.")
+                                self._load_installed_apps() # Reload apps
+                                self.log("App loaded. Type 'launch " + app_name + "' to start.") 
+                            else:
+                                self.log(f"Failed to install {app_name}.")
+                        elif subcmd == "remove" and len(parts) > 2:
+                            app_name = parts[2]
+                            if self.pkg_mgr.remove(app_name):
+                                self.log(f"Removed {app_name}.")
+                            else:
+                                self.log(f"Failed to remove {app_name}.")
+                        else:
+                            self.log("Invalid map command.")
+                    
+                    self.render_ui(show_prompt=True)
+                    continue
+
                 # KERNEL ROUTING (LLM)
                 # Ensure we are logged in before accessing LLM
                 if self.login_state != "LOGGED_IN":
@@ -491,6 +558,9 @@ class NeuralKernel:
                 break
             except Exception as e:
                 self.log(f"Panic: {e}")
+                if self.active_app:
+                    self.log("App crashed. Closing...")
+                    self.close_app()
                 self.render_ui(show_prompt=True)
 
     def run(self):

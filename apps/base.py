@@ -25,3 +25,7 @@ class App:
     def on_input(self, user_input: str):
         """Handle text input from the terminal."""
         pass
+
+    def log(self, message: str):
+        """Helper to log to the kernel."""
+        self.kernel.log(message)
