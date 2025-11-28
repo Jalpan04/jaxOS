@@ -41,4 +41,3 @@ Please open an issue on GitHub with:
 -   Expected behavior vs. actual behavior.
 -   Screenshots (if applicable).
 
-Happy Hacking! 🤖
