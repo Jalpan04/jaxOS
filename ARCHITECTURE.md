@@ -32,12 +32,12 @@ Applications in `apps/` inherit from the `App` base class.
 ## 4. Data Flow
 ```mermaid
 graph TD
-    User[User Input] -->|Text/Keys| Kernel
-    Kernel -->|Command?| Shell[Shell Parser]
-    Kernel -->|Natural Language?| Bridge[LLM Bridge]
-    Bridge -->|Prompt| Ollama[Ollama (Gemma 3)]
+    User["User Input"] -->|Text/Keys| Kernel
+    Kernel -->|Command?| Shell["Shell Parser"]
+    Kernel -->|Natural Language?| Bridge["LLM Bridge"]
+    Bridge -->|Prompt| Ollama["Ollama (Gemma 3)"]
     Ollama -->|JSON Intent| Bridge
     Bridge -->|Syscall| Kernel
-    Kernel -->|Render| UI[TkRenderer]
-    Kernel -->|IO| DB[SQLite FS]
+    Kernel -->|Render| UI["TkRenderer"]
+    Kernel -->|IO| DB["SQLite FS"]
 ```
