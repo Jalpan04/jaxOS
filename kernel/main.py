@@ -44,6 +44,7 @@ from tk_renderer import TkRenderer
 from segment_font import SegmentFont
 import browser
 from db import Database
+from auth import AuthManager
 from apps.code_studio import CodeStudio
 from apps.calculator import Calculator
 
@@ -72,6 +73,12 @@ class NeuralKernel:
         
         # Initialize Persistence
         self.db = Database()
+        self.auth = AuthManager(self.db)
+        
+        # Auth State
+        self.login_state = "BOOT" # BOOT, SETUP, LOGIN, LOGGED_IN, RECOVERY
+        self.temp_creds = {} # For storing setup data temporarily
+        self.failed_attempts = 0
         
         # Initialize UI
         self.renderer = TkRenderer()
@@ -109,6 +116,8 @@ class NeuralKernel:
     def render_ui(self, show_prompt=True):
         """Draws the UI frame using atomic rendering."""
         start_y = 30
+        prompt = ""
+        
         if self.active_app:
             # App Mode
             header = [f"--- {self.active_app.__class__.__name__.upper()} ---"]
@@ -119,7 +128,28 @@ class NeuralKernel:
             # System Mode
             header = ["jaxOS v1.0", "--------------"]
             formatted_logs = list(self.system_log_lines)
-            prompt = "USER@NEURO> " if show_prompt else ""
+            
+            if show_prompt:
+                if self.login_state == "SETUP" or self.login_state == "LOGIN":
+                    step = self.temp_creds.get("step")
+                    if step == "username":
+                        prompt = "Username: "
+                    elif step == "password":
+                        prompt = "Password: "
+                    elif step == "confirm":
+                        prompt = "Confirm Password: "
+                elif self.login_state == "RECOVERY":
+                    step = self.temp_creds.get("step")
+                    if step == "recovery_key":
+                        prompt = "Enter Recovery Key: "
+                    elif step == "new_password":
+                        prompt = "New Password: "
+                    elif step == "confirm_new":
+                        prompt = "Confirm New Password: "
+                else:
+                    # Logged In
+                    username = self.auth.current_user if self.auth.current_user else "USER"
+                    prompt = f"{username.upper()}@NEURO> "
         
         self.renderer.render_screen(
             header, 
@@ -144,7 +174,18 @@ class NeuralKernel:
         self.log("[*] Mounting VFS...")
         self.render_ui(show_prompt=False)
         time.sleep(1)
-        self.log("System Ready.")
+        
+        # Auth Check
+        if not self.auth.has_users():
+            self.log("No users found.")
+            self.log("Entering Setup Wizard...")
+            self.login_state = "SETUP"
+            self.temp_creds = {"step": "username"}
+        else:
+            # self.log("System Locked.")
+            self.login_state = "LOGIN"
+            self.temp_creds = {"step": "username"}
+            
         self.render_ui(show_prompt=True)
 
     def _check_ollama(self) -> bool:
@@ -261,6 +302,107 @@ class NeuralKernel:
             
         self.render_ui(show_prompt=True)
 
+    def _handle_setup(self, user_input: str):
+        step = self.temp_creds.get("step")
+        
+        if step == "username":
+            if len(user_input) < 3:
+                self.log("Username too short. Try again:")
+                return
+            self.temp_creds["username"] = user_input
+            self.temp_creds["step"] = "password"
+            
+        elif step == "password":
+            if len(user_input) < 4:
+                self.log("Password too short. Try again:")
+                return
+            self.temp_creds["password"] = user_input
+            self.temp_creds["step"] = "confirm"
+            
+        elif step == "confirm":
+            if user_input == self.temp_creds["password"]:
+                username = self.temp_creds["username"]
+                password = self.temp_creds["password"]
+                recovery_key = self.auth.register(username, password)
+                
+                if recovery_key:
+                    self.log("--- ACCOUNT CREATED ---")
+                    self.log(f"Recovery Key: {recovery_key}")
+                    self.log("WRITE THIS DOWN!")
+                    self.log("-----------------------")
+                    self.auth.login(username, password)
+                    self.login_state = "LOGGED_IN"
+                    self.log(f"Welcome, {username}.")
+                else:
+                    self.log("Error creating account.")
+                    self.login_state = "BOOT" # Retry
+            else:
+                self.log("Passwords do not match.")
+                self.temp_creds["step"] = "password"
+
+    def _handle_login(self, user_input: str):
+        step = self.temp_creds.get("step")
+        
+        if step == "username":
+            self.temp_creds["username"] = user_input
+            self.temp_creds["step"] = "password"
+            
+        elif step == "password":
+            username = self.temp_creds.get("username")
+            password = user_input
+            
+            if self.auth.login(username, password):
+                self.login_state = "LOGGED_IN"
+                self.failed_attempts = 0 # Reset on success
+                self.log(f"Welcome back, {username}.")
+            else:
+                self.failed_attempts += 1
+                self.log(f"Invalid credentials. ({self.failed_attempts}/3)")
+                
+                if self.failed_attempts >= 3:
+                    self.log("--- ACCOUNT LOCKED ---")
+                    self.log("Too many failed attempts.")
+                    self.login_state = "RECOVERY"
+                    self.temp_creds["step"] = "recovery_key"
+                else:
+                    self.temp_creds["step"] = "username"
+
+    def _handle_recovery(self, user_input: str):
+        step = self.temp_creds.get("step")
+        username = self.temp_creds.get("username")
+        
+        if step == "recovery_key":
+            if self.auth.verify_recovery_key(username, user_input):
+                self.log("Recovery Key Accepted.")
+                self.temp_creds["step"] = "new_password"
+            else:
+                self.log("Invalid Recovery Key. Try again:")
+                
+        elif step == "new_password":
+            if len(user_input) < 4:
+                self.log("Password too short. Try again:")
+                return
+            self.temp_creds["new_password"] = user_input
+            self.temp_creds["step"] = "confirm_new"
+            
+        elif step == "confirm_new":
+            if user_input == self.temp_creds["new_password"]:
+                new_password = self.temp_creds["new_password"]
+                if self.auth.reset_password(username, new_password):
+                    self.log("Password Reset Successful.")
+                    self.log("Logging you in...")
+                    self.auth.login(username, new_password)
+                    self.login_state = "LOGGED_IN"
+                    self.failed_attempts = 0
+                    self.log(f"Welcome back, {username}.")
+                else:
+                    self.log("Error resetting password.")
+                    self.login_state = "LOGIN"
+                    self.temp_creds["step"] = "username"
+            else:
+                self.log("Passwords do not match.")
+                self.temp_creds["step"] = "new_password"
+
     def kernel_loop(self):
         """The Input Loop running in a background thread."""
         self.boot()
@@ -280,6 +422,17 @@ class NeuralKernel:
                 if not user_input.strip():
                     continue
 
+                # AUTH ROUTING
+                if self.login_state == "SETUP":
+                    self._handle_setup(user_input)
+                    continue
+                elif self.login_state == "LOGIN":
+                    self._handle_login(user_input)
+                    continue
+                elif self.login_state == "RECOVERY":
+                    self._handle_recovery(user_input)
+                    continue
+
                 # APP ROUTING (Priority 1)
                 if self.active_app:
                     self.active_app.on_input(user_input)
@@ -289,14 +442,37 @@ class NeuralKernel:
                 self.log(f"USER@NEURO> {user_input}")
                 
                 # Global System Commands (Priority 2)
-                if user_input.lower() in ["exit", "quit", "shutdown"]:
+                cmd = user_input.strip().lower()
+                
+                if cmd in ["exit", "quit", "shutdown"]:
                     self.log("Shutting down...")
                     self.render_ui(show_prompt=False)
                     self.running = False
                     self.renderer.stop() # Kill GUI
                     break
+                
+                elif cmd == "logout":
+                    self.auth.logout()
+                    self.login_state = "LOGIN"
+                    self.temp_creds = {"step": "username"}
+                    self.log("Logged out.")
+                    self.render_ui(show_prompt=True)
+                    continue
+                    
+                elif cmd == "register":
+                    self.auth.logout()
+                    self.login_state = "SETUP"
+                    self.temp_creds = {"step": "username"}
+                    self.log("Entering Setup Wizard...")
+                    self.render_ui(show_prompt=True)
+                    continue
 
                 # KERNEL ROUTING (LLM)
+                # Ensure we are logged in before accessing LLM
+                if self.login_state != "LOGGED_IN":
+                    self.log("Access Denied. Please login.")
+                    continue
+
                 self.log("Thinking...")
                 self.render_ui(show_prompt=False) # Hide prompt while thinking
                 

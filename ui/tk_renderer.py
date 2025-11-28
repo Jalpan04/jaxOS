@@ -126,6 +126,33 @@ class TkRenderer:
         for widget in self.widgets:
             if widget.on_click(canvas_x, canvas_y):
                 return # Handled
+        
+        # Check for text clicks (specifically Recovery Key)
+        item = self.canvas.find_closest(canvas_x, canvas_y)
+        if item:
+            tags = self.canvas.gettags(item)
+            # In Tkinter canvas, text items don't have tags by default unless added.
+            # But we can get the text content.
+            item_type = self.canvas.type(item)
+            if item_type == "text":
+                text_content = self.canvas.itemcget(item, "text")
+                if "Recovery Key:" in text_content:
+                    # Extract key
+                    try:
+                        key = text_content.split("Recovery Key:")[1].strip()
+                        self.root.clipboard_clear()
+                        self.root.clipboard_append(key)
+                        self.root.update() # Required for clipboard
+                        
+                        # Visual Feedback (Flash White)
+                        original_fill = self.canvas.itemcget(item, "fill")
+                        self.canvas.itemconfig(item, fill=COLOR_WHITE)
+                        self.root.after(200, lambda: self.canvas.itemconfig(item, fill=original_fill))
+                        
+                        # Optional: Show a temporary "Copied" message
+                        # For now, the visual flash is sufficient feedback
+                    except IndexError:
+                        pass
             
     def get_input(self):
         """Blocking get from input queue."""

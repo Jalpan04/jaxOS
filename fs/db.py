@@ -108,3 +108,13 @@ class Database:
     def count_users(self) -> int:
         self.cursor.execute("SELECT COUNT(*) FROM users")
         return self.cursor.fetchone()[0]
+
+    def update_password(self, username: str, password_hash: str) -> bool:
+        """Updates the password for a user."""
+        try:
+            self.cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?", (password_hash, username))
+            self.conn.commit()
+            return self.cursor.rowcount > 0
+        except Exception as e:
+            print(f"[DB Error] update_password: {e}")
+            return False
