@@ -75,3 +75,59 @@ class Button(Widget):
                 self.command()
             return True
         return False
+
+class Panel(Widget):
+    """A container widget that arranges children using a grid layout."""
+    def __init__(self, x: int, y: int, width: int, height: int):
+        super().__init__(x, y, width, height)
+        self.children = []
+        self.padding = 5
+        self.bg_color = "#001000" # Very dark green
+        self.border_color = "#004400"
+
+    def add_child(self, widget: Widget):
+        self.children.append(widget)
+
+    def set_grid_layout(self, rows: int, cols: int):
+        """Auto-arranges children in a grid."""
+        if not self.children: return
+        
+        cell_width = (self.width - (self.padding * (cols + 1))) // cols
+        cell_height = (self.height - (self.padding * (rows + 1))) // rows
+        
+        for i, widget in enumerate(self.children):
+            row = i // cols
+            col = i % cols
+            
+            if row >= rows: break # Overflow
+            
+            widget.x = self.x + self.padding + (col * (cell_width + self.padding))
+            widget.y = self.y + self.padding + (row * (cell_height + self.padding))
+            widget.width = cell_width
+            widget.height = cell_height
+
+    def draw(self, canvas, renderer):
+        if not self.visible: return
+        
+        # Draw Panel Background
+        canvas.create_rectangle(
+            self.x, self.y,
+            self.x + self.width, self.y + self.height,
+            outline=self.border_color,
+            fill=self.bg_color,
+            width=1
+        )
+        
+        # Draw Children
+        for child in self.children:
+            child.draw(canvas, renderer)
+
+    def on_click(self, x: int, y: int) -> bool:
+        if not self.visible: return False
+        
+        # Check children first (top-most)
+        for child in reversed(self.children):
+            if child.on_click(x, y):
+                return True
+        
+        return False

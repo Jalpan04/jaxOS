@@ -76,6 +76,19 @@ class Database:
             print(f"[DB Error] delete_file: {e}")
             return False
 
+    def delete_dir(self, path: str) -> bool:
+        """Delete all files with the given prefix."""
+        try:
+            # Ensure path ends with / to avoid deleting partial matches (e.g. /doc vs /docs)
+            if not path.endswith("/"):
+                path += "/"
+            self.cursor.execute("DELETE FROM files WHERE path LIKE ?", (path + "%",))
+            self.conn.commit()
+            return self.cursor.rowcount > 0
+        except Exception as e:
+            print(f"[DB Error] delete_dir: {e}")
+            return False
+
     def list_files(self) -> List[str]:
         """List all file paths."""
         self.cursor.execute("SELECT path FROM files")

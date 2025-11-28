@@ -1,5 +1,5 @@
 from apps.base import App
-from ui.widgets import Button, Label
+from ui.widgets import Button, Label, Panel
 
 class Calculator(App):
     def build_ui(self):
@@ -9,28 +9,25 @@ class Calculator(App):
         self.display_label = Label(20, 40, "0", font_size=24, color="#00FF32")
         self.widgets.append(self.display_label)
         
-        # Grid Config
-        start_x = 20
-        start_y = 90
-        btn_w = 60
-        btn_h = 40
-        gap = 10
+        # Keypad Panel
+        panel = Panel(20, 90, 300, 200)
+        self.widgets.append(panel)
         
         buttons = [
-            ['7', '8', '9', '/'],
-            ['4', '5', '6', '*'],
-            ['1', '2', '3', '-'],
-            ['C', '0', '=', '+']
+            '7', '8', '9', '/',
+            '4', '5', '6', '*',
+            '1', '2', '3', '-',
+            'C', '0', '=', '+'
         ]
         
-        for r, row in enumerate(buttons):
-            for c, text in enumerate(row):
-                x = start_x + c * (btn_w + gap)
-                y = start_y + r * (btn_h + gap)
-                
-                # Capture text in closure
-                cmd = lambda t=text: self.on_button_click(t)
-                self.widgets.append(Button(x, y, btn_w, btn_h, text, cmd))
+        for text in buttons:
+            # Capture text in closure
+            cmd = lambda t=text: self.on_button_click(t)
+            # Size doesn't matter here, layout will override
+            btn = Button(0, 0, 10, 10, text, cmd)
+            panel.add_child(btn)
+            
+        panel.set_grid_layout(rows=4, cols=4)
 
         self.content_start_y = 300 # Logs below calculator
 

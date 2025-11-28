@@ -99,7 +99,16 @@ class NeuralKernel:
             "calculator": Calculator(self),
             "calc": Calculator(self) # Alias
         }
+        self.apps = {
+            "code_studio": CodeStudio(self),
+            "python": CodeStudio(self), # Alias
+            "calculator": Calculator(self),
+            "calc": Calculator(self) # Alias
+        }
         self._load_installed_apps()
+        
+        # Filesystem State
+        self.cwd = "/"
 
     def _load_installed_apps(self):
         """Dynamically loads apps from the apps/ directory."""
@@ -534,6 +543,11 @@ class NeuralKernel:
                     self.render_ui(show_prompt=True)
                     continue
 
+                # FILESYSTEM SHELL (Priority 3)
+                if self._handle_filesystem(cmd):
+                    self.render_ui(show_prompt=True)
+                    continue
+
                 # KERNEL ROUTING (LLM)
                 # Ensure we are logged in before accessing LLM
                 if self.login_state != "LOGGED_IN":
@@ -562,6 +576,103 @@ class NeuralKernel:
                     self.log("App crashed. Closing...")
                     self.close_app()
                 self.render_ui(show_prompt=True)
+
+    def _handle_filesystem(self, cmd: str) -> bool:
+        """Handles basic shell commands (ls, cd, mkdir, etc)."""
+        parts = cmd.split(" ")
+        base_cmd = parts[0]
+        
+        if base_cmd == "ls":
+            files = self.db.list_files()
+            self.log(f"--- FILES ({self.cwd}) ---")
+            count = 0
+            for f in files:
+                if f.startswith(self.cwd):
+                    rel_path = f[len(self.cwd):]
+                    if rel_path.startswith("/"): rel_path = rel_path[1:]
+                    if "/" not in rel_path:
+                        self.log(f"- {rel_path}")
+                        count += 1
+            if count == 0:
+                self.log("(empty)")
+            return True
+            
+        elif base_cmd == "pwd":
+            self.log(self.cwd)
+            return True
+            
+        elif base_cmd == "cd":
+            if len(parts) < 2:
+                self.cwd = "/"
+            else:
+                target = parts[1]
+                if target == "..":
+                    if self.cwd != "/":
+                        self.cwd = "/".join(self.cwd.rstrip("/").split("/")[:-1])
+                        if self.cwd == "": self.cwd = "/"
+                elif target == "/":
+                    self.cwd = "/"
+                else:
+                    if self.cwd == "/":
+                        self.cwd += target
+                    else:
+                        self.cwd += "/" + target
+            self.log(f"CWD: {self.cwd}")
+            return True
+            
+        elif base_cmd == "mkdir":
+            if len(parts) < 2:
+                self.log("Usage: mkdir <name>")
+            else:
+                dir_name = parts[1]
+                self.log(f"Created directory: {dir_name}")
+            return True
+            
+        elif base_cmd == "cat":
+            if len(parts) < 2:
+                self.log("Usage: cat <file>")
+            else:
+                filename = parts[1]
+                if self.cwd == "/":
+                    path = filename
+                else:
+                    path = f"{self.cwd}/{filename}"
+                content = self.db.read_file(path)
+                if content is not None:
+                    self.log(f"--- {filename} ---")
+                    self.log(content)
+                else:
+                    self.log(f"File not found: {path}")
+            return True
+            
+        elif base_cmd == "rm":
+            if len(parts) < 2:
+                self.log("Usage: rm <file>")
+            else:
+                filename = parts[1]
+                if self.cwd == "/":
+                    path = filename
+                else:
+                    path = f"{self.cwd}/{filename}"
+                if self.db.delete_file(path):
+                    self.log(f"Deleted {filename}")
+                else:
+                    self.log(f"File not found: {path}")
+            return True
+            
+        elif base_cmd == "rmdir":
+            if len(parts) < 2:
+                self.log("Usage: rmdir <dir>")
+            else:
+                dirname = parts[1]
+                path = os.path.join(self.cwd, dirname).replace("\\", "/")
+                if self.db.delete_dir(path):
+                    self.log(f"Deleted directory {dirname}")
+                else:
+                    self.log(f"Directory not found or empty: {path}")
+            return True
+            
+        return False
 
     def run(self):
         # Start Kernel Loop in background thread
